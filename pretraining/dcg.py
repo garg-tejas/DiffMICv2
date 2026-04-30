@@ -10,9 +10,10 @@ class DCG(nn.Module):
         super(DCG, self).__init__()
 
         # save parameters
+        gpu_number = parameters.model.gpu_number if hasattr(parameters.model, 'gpu_number') else 0
         self.experiment_parameters = {
         "device_type": 'gpu',
-        "gpu_number": 6,
+        "gpu_number": gpu_number,
         # model related hyper-parameters
         "cam_size": (7, 7),
         "K": parameters.model.num_k,
@@ -86,7 +87,6 @@ class DCG(nn.Module):
 
         output = torch.ones((batch_size, num_crops, crop_h, crop_w))
         if self.experiment_parameters["device_type"] == "gpu":
-            # device = torch.device("cuda:{}".format(self.experiment_parameters["gpu_number"]))
             output = output.to(x_original_pytorch.device)
         for i in range(batch_size):
             for j in range(num_crops):

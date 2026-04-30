@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.resnet import resnet18, resnet50, resnet101
-from torchvision.models.densenet import densenet169
+from torchvision.models.densenet import densenet121, densenet169
 
 from timm.models import create_model
 from pretraining.dcg import DCG
@@ -42,51 +42,6 @@ class ConditionalConv2d(nn.Module):
 
 from EfficientSAM.efficient_sam.build_efficient_sam import build_efficient_sam_vits, build_efficient_sam_vitt
 
-class DenoiseUNet(nn.Module):
-    def __init__(self, y_dim, feature_dim, n_steps, guidance=True):
-        super(DenoiseUNet, self).__init__()
-
-        if guidance:
-            self.lin1 = ConditionalConv2d(y_dim * 2, feature_dim, n_steps)
-        else:
-            self.lin1 = ConditionalConv2d(y_dim, feature_dim, n_steps)
-
-        self.unetnorm1 = nn.BatchNorm2d(feature_dim)
-        self.lin2 = ConditionalConv2d(feature_dim, feature_dim, n_steps)
-        self.unetnorm2 = nn.BatchNorm2d(feature_dim)
-        self.lin3 = ConditionalConv2d(feature_dim, feature_dim, n_steps)
-        self.unetnorm3 = nn.BatchNorm2d(feature_dim)
-        self.lin4 = nn.Conv2d(feature_dim, y_dim, kernel_size=1, stride=1)
-        self.cond_weight = nn.Parameter(torch.randn((1, feature_dim, 7)), requires_grad=True)
-
-        
-    def forward(self, x, y, t):
-
-        y = self.lin1(y, t)
-        y = self.unetnorm1(y)
-        y = F.softplus(y)
-        skip_y1 = y
-
-        w = torch.softmax(self.cond_weight,dim=2)
-        x_weight = torch.sum(x*w,dim=-1)
-        # print(x_weight.shape)
-        y = x_weight.unsqueeze(-1).unsqueeze(-1) * y
-        # y = x*y
-        y = self.lin2(y, t)
-        y = self.unetnorm2(y)
-        y = F.softplus(y)
-        
-        # y = x * y
-        y = self.lin3(y, t)
-        y = self.unetnorm3(y)
-        y = F.softplus(y)
-        y = y + skip_y1
-
-        y = self.lin4(y)
-            
-        return y
-
-
 class ConditionalModel(nn.Module):
     def __init__(self, config, guidance=True):
         super(ConditionalModel, self).__init__()
@@ -121,7 +76,8 @@ class ConditionalModel(nn.Module):
         self.lin3 = ConditionalConv2d(feature_dim, feature_dim, n_steps)
         self.unetnorm3 = nn.BatchNorm2d(feature_dim)
         self.lin4 = nn.Conv2d(feature_dim, y_dim, kernel_size=1, stride=1)
-        self.cond_weight = nn.Parameter(torch.randn((1, feature_dim, 7)), requires_grad=True)
+        num_patches = config.model.num_k if hasattr(config.model, 'num_k') else 6
+        self.cond_weight = nn.Parameter(torch.randn((1, feature_dim, num_patches + 1)), requires_grad=True)
 
         
     def forward(self, x, y, t, x_l, attn):

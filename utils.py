@@ -185,9 +185,10 @@ def compute_isic_metrics(gt, pred):
     Rec = recall_score(gt_class, pred_class, average='macro')
     F1 = f1_score(gt_class, pred_class, average='macro')
     try:
-        AUC_ovo = metrics.roc_auc_score(gt_np, pred_np)
-    except:
-        AUC_ovo=0.
+        AUC_ovo = metrics.roc_auc_score(gt_np, pred_np, average='macro', multi_class='ovo')
+    except Exception as e:
+        print(f"AUC computation failed: {e}")
+        AUC_ovo = 0.
     #AUC_macro = metrics.roc_auc_score(gt_class, pred_np, average='macro', multi_class='ovo')
 
     #SPEC = specificity_score(gt_class, pred_class, average='macro')

@@ -55,8 +55,10 @@ class SR3scheduler(DDIMScheduler):
         return noisy_samples
 
 def create_SR3scheduler(opt,phase):
-    
-    steps= opt['num_train_timesteps'] if phase=="train" else opt['num_test_timesteps']
+    # Always use num_train_timesteps for the underlying schedule.
+    # DDIM inference with fewer steps still needs the full training schedule
+    # to correctly compute alphas for the subset of timesteps.
+    steps = opt['num_train_timesteps']
     scheduler=SR3scheduler(
         num_train_timesteps = steps,
         beta_start = opt['beta_start'],
