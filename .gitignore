@@ -1,4 +1,5 @@
-skills/
-*.pdf
-assets/
-DiffMIC/
+# Large EfficientSAM pretrained weights
+EfficientSAM/weights/*.pt
+EfficientSAM/weights/*.pt.zip
+EfficientSAM/weights/*.onnx
+EfficientSAM/torchscripted_model/*.pt

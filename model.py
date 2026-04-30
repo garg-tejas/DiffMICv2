@@ -170,7 +170,7 @@ class SamEncoder(nn.Module):
     def __init__(self, arch='resnet18', feature_dim=128, config=None, image_size=224):
         super(SamEncoder, self).__init__()
 
-        self.f = build_efficient_sam_vits()
+        self.f = build_efficient_sam_vits(img_size=image_size)
         
         # Infer actual output channels from a dummy forward pass
         with torch.no_grad():
