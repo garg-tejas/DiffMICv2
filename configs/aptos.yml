@@ -99,3 +99,10 @@ aux_optim:
     amsgrad: True
     eps: 0.00000001
     grad_clip: 1.0
+
+dcg_loss:
+    loss_type: "focal"  # Options: "ce" (cross-entropy) or "focal"
+    focal_gamma: 2.0
+    # Inverse frequency weights for APTOS: [49.3, 10.1, 27.3, 5.3, 8.1]
+    # Normalized so min weight = 1.0
+    class_weights: [1.0, 4.88, 1.81, 9.30, 6.09]

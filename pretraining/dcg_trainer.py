@@ -17,6 +17,51 @@ from pretraining.dcg import DCG
 from utils import get_dataset, cast_label_to_one_hot_and_prototype, compute_isic_metrics, set_random_seed
 
 
+class FocalLoss(nn.Module):
+    """
+    Multi-class Focal Loss for imbalanced classification.
+    FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
+    """
+    def __init__(self, num_classes, gamma=2.0, alpha=None, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.reduction = reduction
+        
+        if alpha is not None:
+            self.alpha = torch.tensor(alpha, dtype=torch.float32)
+        else:
+            self.alpha = torch.ones(num_classes, dtype=torch.float32)
+    
+    def to(self, device):
+        self.alpha = self.alpha.to(device)
+        return self
+    
+    def forward(self, inputs, targets):
+        """
+        inputs: [N, C] raw logits
+        targets: [N, C] one-hot labels
+        """
+        # Compute log probabilities
+        log_probs = nn.functional.log_softmax(inputs, dim=1)
+        probs = torch.exp(log_probs)
+        
+        # Focal weight: (1 - p_t)^gamma
+        focal_weight = (1 - probs) ** self.gamma
+        
+        # Apply alpha weights per class
+        alpha = self.alpha.unsqueeze(0).expand_as(targets)
+        
+        # Focal loss element-wise
+        loss = -alpha * focal_weight * log_probs * targets
+        
+        if self.reduction == 'mean':
+            return loss.sum() / targets.sum()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss.sum(dim=1)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='DiffMIC-v2 DCG Pretraining')
     parser.add_argument('--config', type=str, default='configs/aptos.yml', help='Path to config file')
@@ -78,7 +123,21 @@ def main():
     )
 
     # Loss function
-    criterion = nn.CrossEntropyLoss()
+    loss_config = config.get('dcg_loss', {})
+    loss_type = loss_config.get('loss_type', 'ce')
+    
+    if loss_type == 'focal':
+        gamma = loss_config.get('focal_gamma', 2.0)
+        alpha = loss_config.get('class_weights', None)
+        criterion = FocalLoss(
+            num_classes=config.data.num_classes,
+            gamma=gamma,
+            alpha=alpha
+        ).to(device)
+        print(f"Using Focal Loss (gamma={gamma}, alpha={alpha})")
+    else:
+        criterion = nn.CrossEntropyLoss()
+        print("Using CrossEntropy Loss")
 
     # Training loop
     n_epochs = config.diffusion.aux_cls.n_pretrain_epochs
