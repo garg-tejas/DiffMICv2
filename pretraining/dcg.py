@@ -83,18 +83,20 @@ class DCG(nn.Module):
         :return:
         """
         batch_size, num_crops, _ = crop_positions.shape
+        C = x_original_pytorch.shape[1]
         crop_h, crop_w = self.experiment_parameters["crop_shape"]
 
-        output = torch.ones((batch_size, num_crops, crop_h, crop_w))
+        output = torch.ones((batch_size, num_crops, C, crop_h, crop_w))
         if self.experiment_parameters["device_type"] == "gpu":
             output = output.to(x_original_pytorch.device)
         for i in range(batch_size):
             for j in range(num_crops):
-                tools.crop_pytorch(x_original_pytorch[i, 0, :, :],
-                                                    self.experiment_parameters["crop_shape"],
-                                                    crop_positions[i,j,:],
-                                                    output[i,j,:,:],
-                                                    method=crop_method)
+                for c in range(C):
+                    tools.crop_pytorch(x_original_pytorch[i, c, :, :],
+                                                        self.experiment_parameters["crop_shape"],
+                                                        crop_positions[i,j,:],
+                                                        output[i,j,c,:,:],
+                                                        method=crop_method)
         return output
 
 
@@ -122,9 +124,9 @@ class DCG(nn.Module):
         # print(crops_variable.shape)
         
         # detection network
-        batch_size, num_crops, I, J = crops_variable.size()
+        batch_size, num_crops, C, I, J = crops_variable.size()
         
-        crops_variable = crops_variable.view(batch_size * num_crops, I, J).unsqueeze(1)
+        crops_variable = crops_variable.view(batch_size * num_crops, C, I, J)
         h_crops = self.local_network.forward(crops_variable).view(batch_size, num_crops, -1)
         # print(h_crops.shape)
         # MIL module

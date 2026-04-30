@@ -27,19 +27,17 @@ def parse_args():
     return args
 
 
-def guided_prob_map(y0_g, y0_l, bz, nc, np, device):
-    distance_to_diag = torch.tensor([[abs(i-j) for j in range(np)] for i in range(np)]).to(device)
-    weight_g = 1 - distance_to_diag / (np - 1)
-    weight_l = distance_to_diag / (np - 1)
+def guided_prob_map(y0_g, y0_l, bz, nc, num_crops, device):
+    distance_to_diag = torch.abs(torch.arange(num_crops, device=device).unsqueeze(0) - torch.arange(num_crops, device=device).unsqueeze(1))
+    weight_g = 1 - distance_to_diag / (num_crops - 1)
+    weight_l = distance_to_diag / (num_crops - 1)
     interpolated_value = weight_l.unsqueeze(0).unsqueeze(0) * y0_l.unsqueeze(-1).unsqueeze(-1) + weight_g.unsqueeze(0).unsqueeze(0) * y0_g.unsqueeze(-1).unsqueeze(-1)
-    diag_indices = torch.arange(np)
-    map = interpolated_value.clone()
-    for i in range(bz):
-        for j in range(nc):
-            map[i, j, diag_indices, diag_indices] = y0_g[i, j]
-            map[i, j, np-1, 0] = y0_l[i, j]
-            map[i, j, 0, np-1] = y0_l[i, j]
-    return map
+    diag_indices = torch.arange(num_crops, device=device)
+    # Vectorized assignment (no Python loops)
+    interpolated_value[:, :, diag_indices, diag_indices] = y0_g
+    interpolated_value[:, :, num_crops-1, 0] = y0_l
+    interpolated_value[:, :, 0, num_crops-1] = y0_l
+    return interpolated_value
 
 
 def main():
@@ -88,8 +86,13 @@ def main():
     if os.path.exists(args.ckpt):
         ckpt = torch.load(args.ckpt, map_location=device, weights_only=False)
         if isinstance(ckpt, dict) and 'state_dict' in ckpt:
-            # PyTorch Lightning checkpoint
-            model.load_state_dict(ckpt['state_dict'], strict=False)
+            # PyTorch Lightning checkpoint: strip 'model.' prefix
+            state_dict = {k.replace('model.', '', 1): v for k, v in ckpt['state_dict'].items() if k.startswith('model.')}
+            missing, unexpected = model.load_state_dict(state_dict, strict=False)
+            if missing:
+                print(f"Warning: Missing keys in model: {missing}")
+            if unexpected:
+                print(f"Warning: Unexpected keys in checkpoint: {unexpected}")
         elif isinstance(ckpt, list):
             model.load_state_dict(ckpt[0], strict=False)
         else:
@@ -130,16 +133,17 @@ def main():
             y0_aux, y0_aux_global, y0_aux_local, patches, attns, attn_map = aux_model(x_batch)
 
             bz, nc, H, W = attn_map.size()
-            bz, np = attns.size()
+            bz, num_crops = attns.size()
 
-            y0_cond = guided_prob_map(y0_aux_global, y0_aux_local, bz, nc, np, device)
-            yT = guided_prob_map(torch.rand_like(y0_aux_global), torch.rand_like(y0_aux_local), bz, nc, np, device)
+            y0_cond = guided_prob_map(y0_aux_global, y0_aux_local, bz, nc, num_crops, device)
+            # Paper Eq.10: start from N(M, I) — Gaussian centered at dense guidance map
+            yT = y0_cond + torch.randn_like(y0_cond)
             
             attns_mat = attns.unsqueeze(-1)
             attns_mat = (attns_mat * attns_mat.transpose(1, 2)).unsqueeze(1)
             
             y_pred = sampler.sample_high_res(x_batch, yT, conditions=[y0_cond, patches, attns_mat])
-            y_pred = y_pred.reshape(bz, nc, np*np)
+            y_pred = y_pred.reshape(bz, nc, num_crops*num_crops)
             y_pred = y_pred.mean(2)
 
             all_preds.append(y_pred)

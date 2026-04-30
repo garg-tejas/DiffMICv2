@@ -108,19 +108,17 @@ class DiffMICv2System(pl.LightningModule):
         loss = weights * (noise - noise_gt).square()
         return loss.mean()
 
-    def guided_prob_map(self, y0_g, y0_l, bz, nc, np):
-        distance_to_diag = torch.tensor([[abs(i-j) for j in range(np)] for i in range(np)]).to(self.device)
-        weight_g = 1 - distance_to_diag / (np - 1)
-        weight_l = distance_to_diag / (np - 1)
+    def guided_prob_map(self, y0_g, y0_l, bz, nc, num_crops):
+        distance_to_diag = torch.abs(torch.arange(num_crops, device=self.device).unsqueeze(0) - torch.arange(num_crops, device=self.device).unsqueeze(1))
+        weight_g = 1 - distance_to_diag / (num_crops - 1)
+        weight_l = distance_to_diag / (num_crops - 1)
         interpolated_value = weight_l.unsqueeze(0).unsqueeze(0) * y0_l.unsqueeze(-1).unsqueeze(-1) + weight_g.unsqueeze(0).unsqueeze(0) * y0_g.unsqueeze(-1).unsqueeze(-1)
-        diag_indices = torch.arange(np)
-        map = interpolated_value.clone()
-        for i in range(bz):
-            for j in range(nc):
-                map[i, j, diag_indices, diag_indices] = y0_g[i, j]
-                map[i, j, np-1, 0] = y0_l[i, j]
-                map[i, j, 0, np-1] = y0_l[i, j]
-        return map
+        diag_indices = torch.arange(num_crops, device=self.device)
+        # Vectorized assignment (no Python loops)
+        interpolated_value[:, :, diag_indices, diag_indices] = y0_g
+        interpolated_value[:, :, num_crops-1, 0] = y0_l
+        interpolated_value[:, :, 0, num_crops-1] = y0_l
+        return interpolated_value
 
     def training_step(self, batch, batch_idx):
         self.model.train()
@@ -135,23 +133,23 @@ class DiffMICv2System(pl.LightningModule):
             y0_aux, y0_aux_global, y0_aux_local, patches, attns, attn_map = self.aux_model(x_batch)
         
         bz, nc, H, W = attn_map.size()
-        bz, np = attns.size()
+        bz, num_crops = attns.size()
         
-        y_map = y_batch.unsqueeze(1).expand(-1, np*np, -1).reshape(bz*np*np, nc)
+        y_map = y_batch.unsqueeze(1).expand(-1, num_crops*num_crops, -1).reshape(bz*num_crops*num_crops, nc)
         noise = torch.randn_like(y_map).to(self.device)
-        timesteps = torch.randint(0, self.DiffSampler.scheduler.config.num_train_timesteps, (bz*np*np,), device=self.device).long()
+        timesteps = torch.randint(0, self.DiffSampler.scheduler.config.num_train_timesteps, (bz*num_crops*num_crops,), device=self.device).long()
 
         noisy_y = self.DiffSampler.scheduler.add_noise(y_map, timesteps=timesteps, noise=noise)
-        noisy_y = noisy_y.view(bz, np*np, -1).permute(0, 2, 1).reshape(bz, nc, np, np)
+        noisy_y = noisy_y.view(bz, num_crops*num_crops, -1).permute(0, 2, 1).reshape(bz, nc, num_crops, num_crops)
         
-        y0_cond = self.guided_prob_map(y0_aux_global, y0_aux_local, bz, nc, np)
+        y0_cond = self.guided_prob_map(y0_aux_global, y0_aux_local, bz, nc, num_crops)
         y_fusion = torch.cat([y0_cond, noisy_y], dim=1)
 
         attns = attns.unsqueeze(-1)
         attns = (attns * attns.transpose(1, 2)).unsqueeze(1)
         noise_pred = self.model(x_batch, y_fusion, timesteps, patches, attns)
 
-        noise = noise.view(bz, np*np, -1).permute(0, 2, 1).reshape(bz, nc, np, np)
+        noise = noise.view(bz, num_crops*num_crops, -1).permute(0, 2, 1).reshape(bz, nc, num_crops, num_crops)
         loss = self.diffusion_focal_loss(y0_aux, y_batch, noise_pred, noise)
 
         self.log("train_loss", loss, prog_bar=True)
@@ -188,16 +186,17 @@ class DiffMICv2System(pl.LightningModule):
             y0_aux, y0_aux_global, y0_aux_local, patches, attns, attn_map = self.aux_model(x_batch)
 
         bz, nc, H, W = attn_map.size()
-        bz, np = attns.size()
+        bz, num_crops = attns.size()
 
-        y0_cond = self.guided_prob_map(y0_aux_global, y0_aux_local, bz, nc, np)
-        yT = self.guided_prob_map(torch.rand_like(y0_aux_global), torch.rand_like(y0_aux_local), bz, nc, np)
+        y0_cond = self.guided_prob_map(y0_aux_global, y0_aux_local, bz, nc, num_crops)
+        # Paper Eq.10: start from N(M, I) — Gaussian centered at dense guidance map
+        yT = y0_cond + torch.randn_like(y0_cond)
         
         attns = attns.unsqueeze(-1)
         attns = (attns * attns.transpose(1, 2)).unsqueeze(1)
         
         y_pred = self.DiffSampler.sample_high_res(x_batch, yT, conditions=[y0_cond, patches, attns])
-        y_pred = y_pred.reshape(bz, nc, np*np)
+        y_pred = y_pred.reshape(bz, nc, num_crops*num_crops)
         y_pred = y_pred.mean(2)
         
         self.preds.append(y_pred)

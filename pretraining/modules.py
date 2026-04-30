@@ -394,7 +394,10 @@ class LocalNetwork(AbstractMILUnit):
         :return:
         """
         # forward propagte using ResNet
-        res = self.parent_module.dn_resnet(x_crop.expand(-1, 3, -1 , -1))
+        # x_crop is already (N, 3, h, w) since _retrieve_crop now extracts all RGB channels
+        if x_crop.shape[1] == 1:
+            x_crop = x_crop.expand(-1, 3, -1, -1)
+        res = self.parent_module.dn_resnet(x_crop)
         # global average pooling
         res = res.mean(dim=2).mean(dim=2)
         return res

@@ -81,9 +81,10 @@ class ConditionalModel(nn.Module):
 
         
     def forward(self, x, y, t, x_l, attn):
-        bz, np, I, J = x_l.shape
+        # x_l: (bz, num_crops, C, I, J) from DCG — all RGB channels preserved
+        bz, num_crops, C, I, J = x_l.shape
 
-        x_l = x_l.view(bz * np, I, J).unsqueeze(1).expand(-1, 3, -1 , -1)
+        x_l = x_l.view(bz * num_crops, C, I, J)
         x_l = self.encoder_x_l(x_l)
         x_l = self.norm_l(x_l)
         
@@ -95,13 +96,16 @@ class ConditionalModel(nn.Module):
         y = self.unetnorm1(y)
         y = F.softplus(y)
         
-        x_l = x_l.reshape(bz , np, x_l.shape[1]).permute(0,2,1)
+        x_l = x_l.reshape(bz , num_crops, x_l.shape[1]).permute(0,2,1)
+        # Use DCG attention outer-product diagonal to weight local patch features
+        # attn: (bz, 1, num_crops, num_crops) -> diagonal: (bz, num_crops)
+        attn_diag = attn.diagonal(dim1=-2, dim2=-1)  # (bz, num_crops)
+        attn_diag = attn_diag / (attn_diag.sum(dim=1, keepdim=True) + 1e-8)
+        x_l = x_l * attn_diag.unsqueeze(1)  # (bz, feat_dim, num_crops)
+        
         x = torch.cat([x.unsqueeze(-1),x_l],dim=-1)
         w = torch.softmax(self.cond_weight,dim=2)
-        # print(w.shape)
-        # print(x.shape)
         x_weight = torch.sum(x*w,dim=-1)
-        # print(x_weight.shape)
         y = x_weight.unsqueeze(-1).unsqueeze(-1) * y
         
         y = self.lin2(y, t)
@@ -147,7 +151,7 @@ class ResNetEncoder(nn.Module):
             
 
         for name, module in backbone.named_children():
-            if name != 'fc':
+            if name not in ('fc', 'classifier', 'head'):
                 self.f.append(module)
         # encoder
         self.f = nn.Sequential(*self.f)
