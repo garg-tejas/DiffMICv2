@@ -170,15 +170,19 @@ class SamEncoder(nn.Module):
     def __init__(self, arch='resnet18', feature_dim=128, config=None, image_size=224):
         super(SamEncoder, self).__init__()
 
-        self.f = []
-        self.f = build_efficient_sam_vits(image_size=image_size)
-        self.featdim = 384
+        self.f = build_efficient_sam_vits()
         
-            
+        # Infer actual output channels from a dummy forward pass
+        with torch.no_grad():
+            dummy = torch.zeros(1, 3, image_size, image_size)
+            dummy_out = self.f.get_image_embeddings(dummy)
+            self.featdim = dummy_out.shape[1]
+        
         self.g = nn.Conv2d(self.featdim, feature_dim, kernel_size=1, stride=1)
 
     def forward_feature(self, x):
-        feature = self.f(x)
+        # Use get_image_embeddings to avoid prompt requirements
+        feature = self.f.get_image_embeddings(x)
         feature = self.g(feature)
         feature = F.adaptive_avg_pool2d(feature,(1,1))
         return torch.flatten(feature,start_dim=1)
