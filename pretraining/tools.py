@@ -105,13 +105,22 @@ def crop_pytorch(original_img_pytorch, crop_shape, crop_position, out,
     """
     Function that take a crop on the original image.
     Use PyTorch to do this.
-    :param original_img_pytorch: (N,C,H,W) PyTorch Tensor
+    Supports both single-channel (H,W) and multi-channel (C,H,W) inputs.
+    :param original_img_pytorch: (H,W) or (C,H,W) PyTorch Tensor
     :param crop_shape: (h, w) integer tuple
     :param method: supported in ["center", "upper_left"]
-    :return: (N, K, h, w) PyTorch Tensor
+    :return: writes to out (h,w) or (C,h,w)
     """
     # retrieve inputs
-    H, W = original_img_pytorch.shape
+    if original_img_pytorch.dim() == 2:
+        H, W = original_img_pytorch.shape
+        slice_prefix = ()
+        out_slice = (slice(None), slice(None))
+    else:
+        C, H, W = original_img_pytorch.shape
+        slice_prefix = (slice(None),)
+        out_slice = (slice(None), slice(None), slice(None))
+
     crop_x, crop_y = crop_position
     x_delta, y_delta = crop_shape
 
@@ -135,14 +144,15 @@ def crop_pytorch(original_img_pytorch, crop_shape, crop_position, out,
 
     # somehow background is normalized to this number
     if background_val == "min":
-        out[:, :] = original_img_pytorch.min()
+        out[out_slice] = original_img_pytorch.min()
     else:
-        out[:, :] = background_val
+        out[out_slice] = background_val
     real_x_delta = max_x - min_x
     real_y_delta = max_y - min_y
     origin_x = crop_shape[0] - real_x_delta
     origin_y = crop_shape[1] - real_y_delta
-    out[origin_x:, origin_y:] = original_img_pytorch[min_x:max_x, min_y:max_y]
+    out[(slice(None),) * (original_img_pytorch.dim() - 2) + (slice(origin_x, None), slice(origin_y, None))] = \
+        original_img_pytorch[slice_prefix + (slice(min_x, max_x), slice(min_y, max_y))]
 
 
 def get_max_window(input_image, window_shape, pooling_logic="avg"):

@@ -66,6 +66,7 @@ class DiffMICv2System(pl.LightningModule):
         if dcg_ckpt and os.path.exists(dcg_ckpt):
             self.init_weight(ckpt_path=dcg_ckpt)
         self.aux_model.eval()
+        self.aux_model.requires_grad_(False)  # paper: DCG is frozen during diffusion training
 
         self.save_hyperparameters()
         
@@ -115,7 +116,7 @@ class DiffMICv2System(pl.LightningModule):
         interpolated_value = weight_l.unsqueeze(0).unsqueeze(0) * y0_l.unsqueeze(-1).unsqueeze(-1) + weight_g.unsqueeze(0).unsqueeze(0) * y0_g.unsqueeze(-1).unsqueeze(-1)
         diag_indices = torch.arange(num_crops, device=self.device)
         # Vectorized assignment (no Python loops)
-        interpolated_value[:, :, diag_indices, diag_indices] = y0_g
+        interpolated_value[:, :, diag_indices, diag_indices] = y0_g.unsqueeze(-1)
         interpolated_value[:, :, num_crops-1, 0] = y0_l
         interpolated_value[:, :, 0, num_crops-1] = y0_l
         return interpolated_value

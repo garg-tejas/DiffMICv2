@@ -98,12 +98,15 @@ class ConditionalModel(nn.Module):
         
         x_l = x_l.reshape(bz , num_crops, x_l.shape[1]).permute(0,2,1)
         # Use DCG attention outer-product diagonal to weight local patch features
-        # attn: (bz, 1, num_crops, num_crops) -> diagonal: (bz, num_crops)
-        attn_diag = attn.diagonal(dim1=-2, dim2=-1)  # (bz, num_crops)
-        attn_diag = attn_diag / (attn_diag.sum(dim=1, keepdim=True) + 1e-8)
-        x_l = x_l * attn_diag.unsqueeze(1)  # (bz, feat_dim, num_crops)
+        # attn: (bz, 1, num_crops, num_crops) -> squeeze -> (bz, num_crops, num_crops) -> diagonal -> (bz, num_crops)
+        attn_diag = attn.squeeze(1).diagonal(dim1=-2, dim2=-1)  # (bz, num_crops)
+        attn_diag = attn_diag / (attn_diag.sum(dim=-1, keepdim=True) + 1e-8)  # normalize over crops dim
+        x_l = x_l * attn_diag.unsqueeze(1)  # (bz, feat_dim, num_crops) * (bz, 1, num_crops)
         
         x = torch.cat([x.unsqueeze(-1),x_l],dim=-1)
+        # NOTE: Paper Eq.6 describes unconstrained element-wise Q scale (no softmax).
+        # Using softmax enforces a sum-to-one normalization not in the paper.
+        # This is a known structural deviation; empirical impact is dataset-dependent.
         w = torch.softmax(self.cond_weight,dim=2)
         x_weight = torch.sum(x*w,dim=-1)
         y = x_weight.unsqueeze(-1).unsqueeze(-1) * y
@@ -171,10 +174,13 @@ class ResNetEncoder(nn.Module):
         return feature
 
 class SamEncoder(nn.Module):
-    def __init__(self, arch='resnet18', feature_dim=128, config=None, image_size=224):
+    def __init__(self, arch='efficient_sam_vits', feature_dim=128, config=None, image_size=224):
         super(SamEncoder, self).__init__()
 
-        self.f = build_efficient_sam_vits(img_size=image_size)
+        if arch == 'efficient_sam_vitt':
+            self.f = build_efficient_sam_vitt(img_size=image_size)
+        else:
+            self.f = build_efficient_sam_vits(img_size=image_size)
         
         # Infer actual output channels from a dummy forward pass
         with torch.no_grad():

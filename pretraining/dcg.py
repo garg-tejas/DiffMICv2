@@ -91,12 +91,11 @@ class DCG(nn.Module):
             output = output.to(x_original_pytorch.device)
         for i in range(batch_size):
             for j in range(num_crops):
-                for c in range(C):
-                    tools.crop_pytorch(x_original_pytorch[i, c, :, :],
-                                                        self.experiment_parameters["crop_shape"],
-                                                        crop_positions[i,j,:],
-                                                        output[i,j,c,:,:],
-                                                        method=crop_method)
+                tools.crop_pytorch(x_original_pytorch[i, :, :, :],
+                                                    self.experiment_parameters["crop_shape"],
+                                                    crop_positions[i,j,:],
+                                                    output[i,j,:,:,:],
+                                                    method=crop_method)
         return output
 
 

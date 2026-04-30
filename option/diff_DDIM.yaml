@@ -7,23 +7,6 @@ scheduler:
   beta_schedule: linear
   eta: 0
 
-model:
-  image_size: 224
-  in_channels: 6
-  out_channels: 3
-  layers_per_block: 3
-  block_out_channels:
-    - 32
-    - 64
-    - 128
-    - 256
-  down_block_types:
-    - DownBlock2D
-    - DownBlock2D
-    - DownBlock2D
-    - DownBlock2D
-  up_block_types:
-    - UpBlock2D
-    - UpBlock2D
-    - UpBlock2D
-    - UpBlock2D
+# NOTE: The diffusion model architecture is defined in model.py::ConditionalModel,
+# not via a config block. The DDIM scheduler parameters above are the only
+# configuration read from this file.

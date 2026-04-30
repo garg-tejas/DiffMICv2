@@ -34,7 +34,7 @@ def guided_prob_map(y0_g, y0_l, bz, nc, num_crops, device):
     interpolated_value = weight_l.unsqueeze(0).unsqueeze(0) * y0_l.unsqueeze(-1).unsqueeze(-1) + weight_g.unsqueeze(0).unsqueeze(0) * y0_g.unsqueeze(-1).unsqueeze(-1)
     diag_indices = torch.arange(num_crops, device=device)
     # Vectorized assignment (no Python loops)
-    interpolated_value[:, :, diag_indices, diag_indices] = y0_g
+    interpolated_value[:, :, diag_indices, diag_indices] = y0_g.unsqueeze(-1)
     interpolated_value[:, :, num_crops-1, 0] = y0_l
     interpolated_value[:, :, 0, num_crops-1] = y0_l
     return interpolated_value
