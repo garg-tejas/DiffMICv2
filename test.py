@@ -74,7 +74,7 @@ def main():
     # Load DCG checkpoint
     dcg_ckpt = args.dcg_ckpt if args.dcg_ckpt else f'pretraining/ckpt/{config.data.dataset.lower()}_aux_model.pth'
     if os.path.exists(dcg_ckpt):
-        checkpoint = torch.load(dcg_ckpt, map_location=device)
+        checkpoint = torch.load(dcg_ckpt, map_location=device, weights_only=False)
         if 'model_state_dict' in checkpoint:
             state_dict = checkpoint['model_state_dict']
         else:
@@ -86,7 +86,7 @@ def main():
 
     # Load diffusion checkpoint
     if os.path.exists(args.ckpt):
-        ckpt = torch.load(args.ckpt, map_location=device)
+        ckpt = torch.load(args.ckpt, map_location=device, weights_only=False)
         if isinstance(ckpt, dict) and 'state_dict' in ckpt:
             # PyTorch Lightning checkpoint
             model.load_state_dict(ckpt['state_dict'], strict=False)

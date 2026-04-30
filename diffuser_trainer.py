@@ -86,7 +86,7 @@ class DiffMICv2System(pl.LightningModule):
 
     def init_weight(self, ckpt_path=None):
         if ckpt_path and os.path.exists(ckpt_path):
-            checkpoint = torch.load(ckpt_path, map_location=self.device)
+            checkpoint = torch.load(ckpt_path, map_location=self.device, weights_only=False)
             if 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
             else:
