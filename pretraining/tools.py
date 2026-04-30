@@ -200,7 +200,13 @@ def generate_mask_uplft(input_image, window_shape, upper_left_points, gpu_number
     mask_x = Variable(torch.arange(0, H).view(-1, 1).repeat(N, C, 1, W))
     mask_y = Variable(torch.arange(0, W).view(1, -1).repeat(N, C, H, 1))
     if gpu_number is not None:
-        device = torch.device("cuda:{}".format(gpu_number))
+        # Support single GPU only
+        if isinstance(gpu_number, torch.device):
+            device = gpu_number
+        elif isinstance(gpu_number, int):
+            device = torch.device("cuda:{}".format(gpu_number))
+        else:
+            device = torch.device(str(gpu_number))
         mask_x = mask_x.to(device)
         mask_y = mask_y.to(device)
     x_gt_min = mask_x.float() >= mask_x_min.unsqueeze(-1).unsqueeze(-1).float()

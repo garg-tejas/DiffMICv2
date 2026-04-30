@@ -2,7 +2,6 @@ import os, torch, cv2, random
 import numpy as np
 from torch.utils.data import Dataset, Sampler
 import torchvision.transforms as transforms
-from scipy.ndimage.morphology import binary_erosion
 import torchvision.transforms.functional as TF
 from PIL import Image, ImageOps
 from PIL import ImageFile
