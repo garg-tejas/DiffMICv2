@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=2000, help='Random seed')
     parser.add_argument('--output_dir', type=str, default='pretraining/ckpt', help='Output directory for checkpoint')
     parser.add_argument('--exp_name', type=str, default='aptos_aux_model', help='Experiment name')
+    parser.add_argument('--loss_type', type=str, default=None, choices=['ce', 'focal'], help='Loss type override (ce or focal). If not set, uses config.dcg_loss.loss_type')
     args = parser.parse_args()
     return args
 
@@ -124,7 +125,7 @@ def main():
 
     # Loss function
     loss_config = config.get('dcg_loss', {})
-    loss_type = loss_config.get('loss_type', 'ce')
+    loss_type = args.loss_type if args.loss_type is not None else loss_config.get('loss_type', 'ce')
     
     if loss_type == 'focal':
         gamma = loss_config.get('focal_gamma', 2.0)
