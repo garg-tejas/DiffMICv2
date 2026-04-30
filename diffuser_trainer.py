@@ -101,14 +101,6 @@ class DiffMICv2System(pl.LightningModule):
         elif ckpt_path:
             print(f"Warning: DCG checkpoint not found at {ckpt_path}. Using random initialization.")
 
-    def diffusion_focal_loss(self, prior, targets, noise, noise_gt, gamma=1, alpha=10):
-        probs = F.softmax(prior, dim=1)
-        probs = (probs * targets).sum(dim=1)
-        weights = 1 + alpha * (1 - probs) ** gamma
-        weights = weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        loss = weights * (noise - noise_gt).square()
-        return loss.mean()
-
     def guided_prob_map(self, y0_g, y0_l, bz, nc, num_crops):
         distance_to_diag = torch.abs(torch.arange(num_crops, device=self.device).unsqueeze(0) - torch.arange(num_crops, device=self.device).unsqueeze(1))
         weight_g = 1 - distance_to_diag / (num_crops - 1)
@@ -151,7 +143,8 @@ class DiffMICv2System(pl.LightningModule):
         noise_pred = self.model(x_batch, y_fusion, timesteps, patches, attns)
 
         noise = noise.view(bz, num_crops*num_crops, -1).permute(0, 2, 1).reshape(bz, nc, num_crops, num_crops)
-        loss = self.diffusion_focal_loss(y0_aux, y_batch, noise_pred, noise)
+        # Paper Eq. 9: plain MSE loss — no focal weighting
+        loss = F.mse_loss(noise_pred, noise)
 
         self.log("train_loss", loss, prog_bar=True)
         return {"loss": loss}

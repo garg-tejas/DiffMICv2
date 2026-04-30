@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 
 import pretraining.tools as tools
-from torchvision.models.resnet import conv3x3, resnet18, resnet50
+from torchvision.models.resnet import conv3x3, resnet18, resnet50, ResNet18_Weights
 
 
 class BasicBlockV2(nn.Module):
@@ -222,7 +222,7 @@ class DownsampleNetworkResNet18V1(nn.Module):
         super(DownsampleNetworkResNet18V1, self).__init__()
         self.f = []
         # backbone = resnet50(pretrained=True)
-        backbone = resnet18(pretrained=True)
+        backbone = resnet18(weights=ResNet18_Weights.DEFAULT)
 
         
         for name, module in backbone.named_children():

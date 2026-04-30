@@ -24,10 +24,10 @@ class ConditionalLinear(nn.Module):
         return out
 
 class ConditionalConv2d(nn.Module):
-    def __init__(self, num_in, num_out, n_steps):
+    def __init__(self, num_in, num_out, n_steps, kernel_size=1, padding=0):
         super(ConditionalConv2d, self).__init__()
         self.num_out = num_out
-        self.lin = nn.Conv2d(num_in, num_out, kernel_size=1, stride=1)
+        self.lin = nn.Conv2d(num_in, num_out, kernel_size=kernel_size, stride=1, padding=padding)
         self.embed = nn.Embedding(n_steps, num_out)
         self.embed.weight.data.uniform_()
 
@@ -71,9 +71,10 @@ class ConditionalModel(nn.Module):
         else:
             self.lin1 = ConditionalConv2d(y_dim, feature_dim, n_steps)
         self.unetnorm1 = nn.BatchNorm2d(feature_dim)
-        self.lin2 = ConditionalConv2d(feature_dim, feature_dim, n_steps)
+        # Paper Sec. III.D: use 3x3 conv to explore correlations among diverse noise points
+        self.lin2 = ConditionalConv2d(feature_dim, feature_dim, n_steps, kernel_size=3, padding=1)
         self.unetnorm2 = nn.BatchNorm2d(feature_dim)
-        self.lin3 = ConditionalConv2d(feature_dim, feature_dim, n_steps)
+        self.lin3 = ConditionalConv2d(feature_dim, feature_dim, n_steps, kernel_size=3, padding=1)
         self.unetnorm3 = nn.BatchNorm2d(feature_dim)
         self.lin4 = nn.Conv2d(feature_dim, y_dim, kernel_size=1, stride=1)
         num_patches = config.model.num_k if hasattr(config.model, 'num_k') else 6
@@ -97,18 +98,12 @@ class ConditionalModel(nn.Module):
         y = F.softplus(y)
         
         x_l = x_l.reshape(bz , num_crops, x_l.shape[1]).permute(0,2,1)
-        # Use DCG attention outer-product diagonal to weight local patch features
-        # attn: (bz, 1, num_crops, num_crops) -> squeeze -> (bz, num_crops, num_crops) -> diagonal -> (bz, num_crops)
-        attn_diag = attn.squeeze(1).diagonal(dim1=-2, dim2=-1)  # (bz, num_crops)
-        attn_diag = attn_diag / (attn_diag.sum(dim=-1, keepdim=True) + 1e-8)  # normalize over crops dim
-        x_l = x_l * attn_diag.unsqueeze(1)  # (bz, feat_dim, num_crops) * (bz, 1, num_crops)
         
-        x = torch.cat([x.unsqueeze(-1),x_l],dim=-1)
-        # NOTE: Paper Eq.6 describes unconstrained element-wise Q scale (no softmax).
-        # Using softmax enforces a sum-to-one normalization not in the paper.
-        # This is a known structural deviation; empirical impact is dataset-dependent.
-        w = torch.softmax(self.cond_weight,dim=2)
-        x_weight = torch.sum(x*w,dim=-1)
+        # Paper Eq. 6: image feature prior F = Q ⊙ [F_raw, F_roi^1, ..., F_roi^K]
+        # No DCG attention weighting here — Q is an unconstrained learnable scale.
+        x = torch.cat([x.unsqueeze(-1), x_l], dim=-1)
+        w = self.cond_weight  # raw Q, no softmax normalization
+        x_weight = torch.sum(x * w, dim=-1)
         y = x_weight.unsqueeze(-1).unsqueeze(-1) * y
         
         y = self.lin2(y, t)
@@ -179,8 +174,11 @@ class SamEncoder(nn.Module):
 
         if arch == 'efficient_sam_vitt':
             self.f = build_efficient_sam_vitt(img_size=image_size)
-        else:
+        elif arch in ('efficient_sam_vits', 'resnet18', 'resnet50', 'densenet121', 'densenet169'):
+            # APTOS config uses 'resnet18' for global encoder but paper uses EfficientSAM
             self.f = build_efficient_sam_vits(img_size=image_size)
+        else:
+            raise ValueError(f"SamEncoder: unsupported arch '{arch}'. Expected 'efficient_sam_vits' or 'efficient_sam_vitt'.")
         
         # Infer actual output channels from a dummy forward pass
         with torch.no_grad():
